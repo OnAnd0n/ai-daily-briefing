@@ -9,6 +9,9 @@ import json
 import io
 import pypdf
 import traceback
+
+from rank_bm25 import BM25Okapi
+
 from google import genai  # ✅ 변경된 import
 
 # --- API 키 설정 ---
@@ -28,12 +31,44 @@ if GEMINI_API_KEY:
 
 # --- 사용자 관심사 정의 ---
 USER_INTERESTS = """
-- Embedding Model, Reranker
+- Embedding Model, Reranker, multi-vector, col-bert, Information Retriever 
 - LLM, LLM Quantization
-- LoRA 튜닝, Domain-Adaptation, Continual-Learning
-- Sparse/Dense Vector, Vector DB & Search
+- LoRA fine-tuning, Domain-Adaptation, Continual-Learning
+- sparse vector, dense vector, vector DB & Search, indexing, ANN
 - Retrieval-Augmented Generation (RAG)
 """
+
+def filter_papers_bm25(papers, top_k=25):
+    """
+    BM25를 사용하여 관심사와 유사도가 높은 논문을 1차적으로 선별
+    """
+    if not papers: return []
+    
+    # 1. 관심사 키워드 토큰화 (간단한 소문자 공백 분리)
+    query = re.sub(r'[^\w\s]', '', USER_INTERESTS.lower()).split()
+    
+    # 2. 논문 Abstract 토큰화
+    corpus = []
+    for paper in papers:
+        summary = BeautifulSoup(paper.summary, 'html.parser').get_text(separator=" ", strip=True)
+        # 특수문자 제거 및 소문자화하여 토큰 생성
+        tokens = re.sub(r'[^\w\s]', '', summary.lower()).split()
+        corpus.append(tokens)
+    
+    # 3. BM25 모델 생성 및 점수 계산
+    bm25 = BM25Okapi(corpus)
+    doc_scores = bm25.get_scores(query)
+    
+    # 4. 점수와 함께 논문 저장 후 정렬
+    scored_papers = list(zip(papers, doc_scores))
+    scored_papers.sort(key=lambda x: x[1], reverse=True)
+    
+    # 상위 top_k개 반환
+    selected = [p[0] for p in scored_papers[:top_k] if p[1] > 0] # 점수가 0인 것은 제외
+    print(f"🔍 BM25 필터링: {len(papers)}개 중 {len(selected)}개 선별 (Top {top_k})")
+    return selected
+
+
 
 def get_paper_relevance_scores_openrouter(papers_batch):
     """
@@ -211,11 +246,18 @@ for url in arxiv_urls:
         print(" -> 새 논문 없음.")
         continue
 
+    # LLM에 보내기 전 BM25로 1차 필터링 (예: 상위 top_k개만 남김)
+    filtered_by_bm25 = filter_papers_bm25(recent_papers, top_k=32)
+
+    if not filtered_by_bm25:
+        print(" -> BM25 기준을 통과한 논문이 없습니다.")
+        continue
+
     # 배치 처리 (OpenRouter Reasoning 사용)
     top_papers = []
     batch_size = 8 
-    for i in range(0, len(recent_papers), batch_size):
-        batch = recent_papers[i:i+batch_size]
+    for i in range(0, len(filtered_by_bm25), batch_size):
+        batch = filtered_by_bm25[i:i+batch_size]
         print(f" -> 배치 {i//batch_size + 1} 평가 중 (OpenRouter)...")
         scores = get_paper_relevance_scores_openrouter(batch)
         top_papers.extend(scores)

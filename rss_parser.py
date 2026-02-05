@@ -34,7 +34,7 @@ USER_INTERESTS = """
 - Embedding Model, Reranker, multi-vector, col-bert, Information Retriever 
 - LLM, LLM Quantization
 - LoRA fine-tuning, Domain-Adaptation, Continual-Learning
-- sparse vector, dense vector, vector DB & Search, indexing, ANN
+- sparse vector, dense vector, vector DB & Search, indexing, ANN(Approximate Nearest Neighbor)
 - Retrieval-Augmented Generation (RAG)
 """
 
@@ -247,7 +247,7 @@ for url in arxiv_urls:
         continue
 
     # LLM에 보내기 전 BM25로 1차 필터링 (예: 상위 top_k개만 남김)
-    filtered_by_bm25 = filter_papers_bm25(recent_papers, top_k=32)
+    filtered_by_bm25 = filter_papers_bm25(recent_papers, top_k=120)
 
     if not filtered_by_bm25:
         print(" -> BM25 기준을 통과한 논문이 없습니다.")
